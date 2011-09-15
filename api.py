@@ -2,7 +2,10 @@
 
 import sys, os, time
 from pprint import pprint
-import requests
+import requests 
+from urllib import urlencode
+import httplib2
+import redis
 from tablib import Dataset
 from lxml import objectify, etree
 try:
@@ -19,8 +22,10 @@ log.addHandler(console)
 #flog = logging.FileHandler('scraper.log')
 #log.addHandler(flog)
 
+#requests.settings.verbose = sys.stdout
+
 class Query(object):
-    def __init__(self, term=None, datadir='data'):
+    def __init__(self, term=None, datadir='data', cached=True):
         self.cqlp = {}
         self.cqlp['term'] = term
         self.cqlp['year'] = None
@@ -34,6 +39,9 @@ class Query(object):
         self.operation = 'searchRetrieve'
         self.maximumRecords = 100
 
+        if cached:
+            self.cache = redis.Redis(host='localhost', port=6379, db=0)
+
     @property
     def filename(self):
         #XXX hash cql query as filename
@@ -41,26 +49,28 @@ class Query(object):
         filename = os.path.join(os.path.abspath(self.datadir), filename)
         return filename
 
-    def get_records(self):
-        #filename = '.'.join([self.term.replace(' ', '_'), 'xml'])
-        if os.path.exists(self.filename):
-            log.info('"%s": Found file %s' % (self.term, self.filename))
-            f = open(self.filename)
-            xml = f.read()
-            f.close()
-            log.info('"%s": Records from file' % self.term)
-            r = ResultSet(xml)
-            r.filename = self.filename
-            return r
-
-        else:
-            log.info('"%s": Records from SRW' % self.term)
-            r = self.execute(collate=True)
-            r.filename = self.filename
-            return r
+    #def get_records(self):
+    #    #filename = '.'.join([self.term.replace(' ', '_'), 'xml'])
+    #    if os.path.exists(self.filename):
+    #        log.info('"%s": Found file %s' % (self.term, self.filename))
+    #        f = open(self.filename)
+    #        xml = f.read()
+    #        f.close()
+    #        log.info('"%s": Records from file' % self.term)
+    #        r = ResultSet(xml)
+    #        r.filename = self.filename
+    #        return r
+    #
+    #    else:
+    #        log.info('"%s": Records from SRW' % self.term)
+    #        r = self.execute(collate=True)
+    #        r.filename = self.filename
+    #        return r
 
     @property
     def cql(self):
+
+        # more universal version for generic # of terms:
         #cql_elem = dict((k, v) for (k, v) in self.cqlp.items() if v) # remove all the None-value elements
         #for (k, v) in cql_elem.items():
         #    print (k, v)
@@ -70,12 +80,31 @@ class Query(object):
         if self.cqlp['term']: cqlstring.extend(['srw.ServerChoice = \"' + self.cqlp['term'] + '\"'])
         if self.cqlp['year']: cqlstring.extend(['year = ' + str(self.cqlp['year'])])
         if self.cqlp['language']: cqlstring.extend(['language = ' + self.cqlp['language']])
-        #return cqlstring
+
         return ' and '.join(cqlstring)
 
+    def fetch(self, url, cached=True):
+        log.info('Fetcing url: %s' % url)
+        xml_body = self.cache.get(url)
+
+        if xml_body:
+            log.info('XML from cache')
+            return xml_body
+
+        else:
+            #r = requests.request('GET', url=self.baseurl, params=params)
+            #print r.url == self.baseurl + '?' + urlencode(params)
+            r = requests.get(url)
+            #r.status_code
+            #r.headers
+
+            self.cache.set(url, r.content)
+            log.info('XML from web')
+            return r.content
 
     def execute(self, offset=1, collate=False):
         #log.info('"%s": executing SRW query' % self.term)
+
         params = {  'query' : self.cql,
                     'version' : self.version,
                     'operation' : self.operation,
@@ -83,17 +112,19 @@ class Query(object):
                     'maximumRecords' : self.maximumRecords,
                     'recordSchema' : self.recordSchema }
 
-        r = requests.request('GET', url=self.baseurl, params=params)
-        #r.status_code
-        #r.headers
+        url = self.baseurl + '?' + urlencode(params) 
+        #r = requests.request('GET', url=self.baseurl, params=params)
+        #print r.url == url #self.baseurl + '?' + urlencode(params)
+
+        xml_body = self.fetch(url)
 
         if not collate:
-            return ResultSet(r.content)
+            return ResultSet(xml_body)
         else:
             first_recordSet = self.execute(offset=1, collate=False)
             total_records =  first_recordSet.reported_count
 
-            if total_records < 21:
+            if total_records < 21: #TODO fix for variable maxNrRecords
                 offsets = [11]
             else:
                 offsets = range(11, total_records, 10) #XXX mist laaste 10 records?
@@ -156,35 +187,10 @@ class ResultSet(object):
             full_range[date] = c.get(date, 0)
         return full_range
 
-    #def get_data(term, datadir='data'):
-    #    filename = '.'.join([term.replace(' ', '_'), 'xml'])
-    #    filename = os.path.exists(os.path.join(os.path.abspath(datadir), filename))
-    #    if not filename: 
-    #        store_data(term, filename)
-    #
-    #    print get_dates(filename, 1900, 2011).values()
-
     def save(self, filename=None):
         if not filename: filename = self.filename
-        #if not filename:
-        #    filename = '.'.join([self.term.replace(' ', '_'), 'xml'])
-        #    filename = os.path.join(os.path.abspath(self.datadir), filename)
-
-        #r = self.get_records() 
-        #f = open(self.filename, 'w')
-        #f.write(self.root.tostring(encoding='utf-8'))
         self.root.getroottree().write(filename, encoding='utf-8')
-        #f.close()
         log.info('Written XML to %s' % filename)
-        #self.root.write(filename, encoding='utf-8')
-
-    #main()
-    #xml = process('stratificatie.xml')
-    #print count('minderheden')
-    #ns = {'srw' : xml.nsmap.values()[0]}
-    #r = xml.xpath('//srw:record', namespaces=ns)[0]
-    #print get_dates('stratificatie.xml', 1900, 2011)
-    #get_data("sociale klasse")
 
 def export(terms, filename):
 
@@ -223,13 +229,39 @@ def main():
     export(auth_words, 'auth.csv')
     export(ineq_words, 'ineq.csv')
 
+def get_dates(terms=None, start=1900, stop=2010):
+    if type(terms) != list: terms = [terms]
+    data = Dataset()
+    data.headers = ['why?']
+
+    for term in terms:
+        results = {}
+        for year in range(start,stop):
+            q = Query()
+            q.cqlp['year'] = year
+            if term: q.cqlp['term'] = term
+            q.maximumRecords = 1
+            r = q.execute(collate=False)
+            results[year] = r.reported_count
+            if not term: 
+                term_label = 'total'
+            else:
+                term_label = term
+        data.append_col(results.values(), header=term_label)
+
+    data.headers.remove('why?')
+    data.append_col(range(start, stop), header='year')
+    #h = ['year'].extend(terms)
+    #data.headers = h 
+    return data
+
 def year_volumes():
     results = {}
     for year in range(1900,2011):
         log.info(year)
         q = Query()
         q.cqlp['year'] = year
-        q.cqlp['term'] = 'criminologie'
+        q.cqlp['term'] = 'onderwijs'
         q.maximumRecords = 1
         r = q.execute(collate=False)
         results[year] = r.reported_count
@@ -239,16 +271,19 @@ def year_volumes():
     data.append_col(results.keys(), header='year')
     data.append_col(results.values(), header='count')
     data.headers = ['year', 'count']
-    f = open('total_criminologie.csv', 'w')
-    f.write(data.csv)
-    f.close()
+    #f = open('total_criminologie.csv', 'w')
+    #f.write(data.csv)
+    #f.close()
 
 if __name__ == '__main__':
-    r = year_volumes()
-#    main()
-#q = Query('sociale')
-#q = Query()
-#q.cqlp['year'] = 1990
-#q.cqlp['language'] = 'dut'
-#print q.cql
-#r = q.execute(collate=False)
+    #r = year_volumes()
+    #d = get_dates()
+    d = get_dates(['neurologie', 'chemie', 'fysica', 'biologie', 'informatica', 'ICT'])
+    #    main()
+    #q = Query('sociale')
+    #q.cqlp['language'] = 'dut'
+
+    #q = Query()
+    #q.cqlp['year'] = 1990
+    #print q.cql
+    #r = q.execute(collate=False)
