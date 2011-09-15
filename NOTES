@@ -1,5 +1,8 @@
 xmllint --noout --schema srw-types.xsd lifecourse.xml 
 
+http://www.unicat.be/sru?version=1.1&operation=searchRetrieve&query=%22an%22+and+year+=+1940+and+language+=+dut
+
+http://www.unicat.be/sru?version=1.1&operation=searchRetrieve&query=%22sociologie%22&maximumRecords=100
 
 minderheden
 multiculturaliteit

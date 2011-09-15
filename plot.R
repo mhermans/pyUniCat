@@ -11,10 +11,12 @@ library(reshape)
 
 stack.plot <- function(filename) {
   X <- read.csv(filename)
-  X <- subset(X, year > 1939 & year < 2011)
-  X <- melt(X, id='year')
-  X <- data.frame(X)
-  names(X) <- c('year', 'term', 'count')
+  #X <- subset(X, year > 1939 & year < 2011)
+  #if (!(names(X) == c('year', 'count', 'term'))) {
+    X <- melt(X, id='year')
+    X <- data.frame(X)
+    names(X) <- c('year', 'term', 'count')
+  #}
 
   q <- ggplot(X, aes(x=year, y=count, group=term))
   #q + geom_line()
@@ -51,3 +53,25 @@ auth.plot <- stack.plot('datasets/auth.csv')
 ineq.plot <- stack.plot('datasets/ineq.csv')
 
 plot.arrange(auth.plot, allo.plot, ineq.plot, prog.plot, ncol=2)
+
+####################
+# PLOT DISCIPLINES #
+####################
+
+total <- read.csv('datasets/disciplines.csv')
+total <- subset(total, year < 2009)
+
+sum(colSums(total)[3:9])
+colSums(total)['total']
+sum(colSums(total)[3:9])/colSums(total)['total'] #5%
+
+f <- max(c(total$sociologie, total$economie, total$geschiedenis))/max(total$total)
+total$total <- total$total*f
+
+X <- total
+X <- melt(X, id='year')
+X <- data.frame(X)
+names(X) <- c('year', 'term', 'count')
+
+q <- ggplot(X, aes(x=year))
+q  + geom_line(aes(y=count, group=term, color=term))

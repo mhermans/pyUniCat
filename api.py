@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 
-import sys, os
+import sys, os, time
 from pprint import pprint
 import requests
 from tablib import Dataset
@@ -21,10 +21,25 @@ log.addHandler(console)
 
 class Query(object):
     def __init__(self, term=None, datadir='data'):
-        if term: self.term = term
+        self.cqlp = {}
+        self.cqlp['term'] = term
+        self.cqlp['year'] = None
+        self.cqlp['language'] = None
+
         self.datadir = datadir
-        self.filename = '.'.join([self.term.replace(' ', '_'), 'xml'])
-        self.filename = os.path.join(os.path.abspath(self.datadir), self.filename)
+
+        self.recordSchema = 'dc'
+        self.baseurl = 'http://www.unicat.be/sru'
+        self.version = '1.1'
+        self.operation = 'searchRetrieve'
+        self.maximumRecords = 100
+
+    @property
+    def filename(self):
+        #XXX hash cql query as filename
+        filename = '.'.join([self.query['term'].replace(' ', '_'), 'xml'])
+        filename = os.path.join(os.path.abspath(self.datadir), filename)
+        return filename
 
     def get_records(self):
         #filename = '.'.join([self.term.replace(' ', '_'), 'xml'])
@@ -44,9 +59,31 @@ class Query(object):
             r.filename = self.filename
             return r
 
+    @property
+    def cql(self):
+        #cql_elem = dict((k, v) for (k, v) in self.cqlp.items() if v) # remove all the None-value elements
+        #for (k, v) in cql_elem.items():
+        #    print (k, v)
+        # 'term' -> 'srw.ServerChoice'
+
+        cqlstring = []
+        if self.cqlp['term']: cqlstring.extend(['srw.ServerChoice = \"' + self.cqlp['term'] + '\"'])
+        if self.cqlp['year']: cqlstring.extend(['year = ' + str(self.cqlp['year'])])
+        if self.cqlp['language']: cqlstring.extend(['language = ' + self.cqlp['language']])
+        #return cqlstring
+        return ' and '.join(cqlstring)
+
+
     def execute(self, offset=1, collate=False):
-        log.info('"%s": executing SRW query' % self.term)
-        r = requests.get('http://www.unicat.be/sru?version=1.1&operation=searchRetrieve&query=%s&recordSchema=dc&startRecord=%s' % (self.term, offset) )
+        #log.info('"%s": executing SRW query' % self.term)
+        params = {  'query' : self.cql,
+                    'version' : self.version,
+                    'operation' : self.operation,
+                    'startRecord' : offset,
+                    'maximumRecords' : self.maximumRecords,
+                    'recordSchema' : self.recordSchema }
+
+        r = requests.request('GET', url=self.baseurl, params=params)
         #r.status_code
         #r.headers
 
@@ -89,9 +126,10 @@ class ResultSet(object):
         self.ns = { 'dc' : 'http://purl.org/dc/elements/1.1/',
                     'srw': 'http://www.loc.gov/zing/srw/',
                     'xcql': 'http://www.loc.gov/zing/cql/xcql/'}
-
-        #self.term = self.root.xpath('//xcql:term[0]/text()', namespaces=self.ns)
-        self.term = self.root.xpath('//xcql:term/text()', namespaces=self.ns)[0]
+        try:
+            self.term = self.root.xpath('//xcql:term/text()', namespaces=self.ns)[0]
+        except IndexError:
+            self.term = ""
 
 
     @property
@@ -185,5 +223,32 @@ def main():
     export(auth_words, 'auth.csv')
     export(ineq_words, 'ineq.csv')
 
+def year_volumes():
+    results = {}
+    for year in range(1900,2011):
+        log.info(year)
+        q = Query()
+        q.cqlp['year'] = year
+        q.cqlp['term'] = 'criminologie'
+        q.maximumRecords = 1
+        r = q.execute(collate=False)
+        results[year] = r.reported_count
+        #time.sleep(1)
+    pprint(results)
+    data = Dataset()
+    data.append_col(results.keys(), header='year')
+    data.append_col(results.values(), header='count')
+    data.headers = ['year', 'count']
+    f = open('total_criminologie.csv', 'w')
+    f.write(data.csv)
+    f.close()
+
 if __name__ == '__main__':
-    main()
+    r = year_volumes()
+#    main()
+#q = Query('sociale')
+#q = Query()
+#q.cqlp['year'] = 1990
+#q.cqlp['language'] = 'dut'
+#print q.cql
+#r = q.execute(collate=False)
