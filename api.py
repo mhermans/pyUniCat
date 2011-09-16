@@ -15,17 +15,17 @@ except ImportError: # <2.7
 
 import logging
 log = logging.getLogger('unicat')
-#log.setLevel(logging.DEBUG)
-log.setLevel(logging.INFO)
-console = logging.StreamHandler()
-log.addHandler(console)
-#flog = logging.FileHandler('scraper.log')
-#log.addHandler(flog)
+log.setLevel(logging.DEBUG)
+#log.setLevel(logging.INFO)
+#console = logging.StreamHandler()
+#log.addHandler(console)
+flog = logging.FileHandler('unicat.log')
+log.addHandler(flog)
 
 #requests.settings.verbose = sys.stdout
 
 class Query(object):
-    def __init__(self, term=None, datadir='data', cached=True):
+    def __init__(self, term=None, datadir='data', cache=None):
         self.cqlp = {}
         self.cqlp['term'] = term
         self.cqlp['year'] = None
@@ -39,8 +39,8 @@ class Query(object):
         self.operation = 'searchRetrieve'
         self.maximumRecords = 100
 
-        if cached:
-            self.cache = redis.Redis(host='localhost', port=6379, db=0)
+        if cache:
+            self.cache = cache 
 
     @property
     def filename(self):
@@ -229,32 +229,6 @@ def main():
     export(auth_words, 'auth.csv')
     export(ineq_words, 'ineq.csv')
 
-def get_dates(terms=None, start=1900, stop=2010):
-    if type(terms) != list: terms = [terms]
-    data = Dataset()
-    data.headers = ['why?']
-
-    for term in terms:
-        results = {}
-        for year in range(start,stop):
-            q = Query()
-            q.cqlp['year'] = year
-            if term: q.cqlp['term'] = term
-            q.maximumRecords = 1
-            r = q.execute(collate=False)
-            results[year] = r.reported_count
-            if not term: 
-                term_label = 'total'
-            else:
-                term_label = term
-        data.append_col(results.values(), header=term_label)
-
-    data.headers.remove('why?')
-    data.append_col(range(start, stop), header='year')
-    #h = ['year'].extend(terms)
-    #data.headers = h 
-    return data
-
 def year_volumes():
     results = {}
     for year in range(1900,2011):
@@ -275,10 +249,42 @@ def year_volumes():
     #f.write(data.csv)
     #f.close()
 
+class UniCat(object):
+    def __init__(self, cache=True):
+        if cache: 
+            self.cache = redis.Redis(host='localhost', port=6379, db=0)
+
+    def get_dates(self, terms=None, start=1900, stop=2010):
+        if type(terms) != list: terms = [terms]
+        data = Dataset()
+        data.headers = ['why?']
+
+        for term in terms:
+            results = {}
+            for year in range(start,stop):
+                q = Query(cache=self.cache)
+                q.cqlp['year'] = year
+                if term: q.cqlp['term'] = term
+                q.maximumRecords = 1
+                r = q.execute(collate=False)
+                results[year] = r.reported_count
+                if not term: 
+                    term_label = 'total'
+                else:
+                    term_label = term
+            data.append_col(results.values(), header=term_label)
+
+        data.headers.remove('why?')
+        data.append_col(range(start, stop), header='year')
+        #h = ['year'].extend(terms)
+        #data.headers = h 
+        return data
+
+
 if __name__ == '__main__':
-    #r = year_volumes()
-    #d = get_dates()
-    d = get_dates(['neurologie', 'chemie', 'fysica', 'biologie', 'informatica', 'ICT'])
+    u = UniCat()
+    #print u.get_dates(['neurologie', 'chemie', 'fysica', 'biologie', 'informatica', 'ICT']).csv
+    print u.get_dates(['Europa', 'Europese Unie', 'Verenigde Staten', 'United States', 'Europe', 'European Union', 'Afrika', 'Africa', 'China', 'Russia', 'Rusland']).csv
     #    main()
     #q = Query('sociale')
     #q.cqlp['language'] = 'dut'

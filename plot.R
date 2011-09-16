@@ -75,3 +75,5 @@ names(X) <- c('year', 'term', 'count')
 
 q <- ggplot(X, aes(x=year))
 q  + geom_line(aes(y=count, group=term, color=term))
+
+stack.plot('vs_eu.csv')
