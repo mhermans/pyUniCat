@@ -2,29 +2,30 @@ setwd('/home/mhermans/projects/experimental/pyUniCat')
 library(ggplot2)
 library(reshape)
   
-#e <- subset(d, year > 1939 & year < 2011)
-#e$integratie <- NULL
-#e$multicultur_ <- e$multiculturaliteit + e$multicultureel
-#e$multiculturaliteit <- e$multicultureel <- NULL
-#e$im_migratie <- e$migratie + e$immigratie
-#e$migratie <- e$immigratie <- NULL
-
-stack.plot <- function(filename) {
-  X <- read.csv(filename)
-  #X <- subset(X, year > 1939 & year < 2011)
-  #if (!(names(X) == c('year', 'count', 'term'))) {
-    X <- melt(X, id='year')
-    X <- data.frame(X)
-    names(X) <- c('year', 'term', 'count')
-  #}
-
-  q <- ggplot(X, aes(x=year, y=count, group=term))
-  #q + geom_line()
-  q <- q + geom_area(aes(colour = term, fill= term), position = 'stack')
-  q 
+stack.dataset <- function(data) {
+  data <- melt(data, id='year')
+  data <- data.frame(data)
+  names(data) <- c('year', 'term', 'count')
+  data
 }
 
+plot.trendlines <- function(data) {
+  q <- ggplot(X, aes(x=year))
+  q  + geom_line(aes(y=count, group=term, color=term)) 
+  q
+}
+
+plot.areas <- function(data) {
+  p + geom_area(aes(colour = term, fill= term), position = 'stack')
+  p <- ggplot(X, aes(x=year, y=count, group=term))
+  p
+}
+
+#X <- subset(X, year > 1939 & year < 2011)
+
+
 vp.layout <- function(x, y) viewport(layout.pos.row=x, layout.pos.col=y)
+
 plot.arrange <- function(..., nrow=NULL, ncol=NULL, as.table=FALSE) {
  dots <- list(...)
  n <- length(dots)
@@ -68,12 +69,29 @@ sum(colSums(total)[3:9])/colSums(total)['total'] #5%
 f <- max(c(total$sociologie, total$economie, total$geschiedenis))/max(total$total)
 total$total <- total$total*f
 
-X <- total
-X <- melt(X, id='year')
-X <- data.frame(X)
-names(X) <- c('year', 'term', 'count')
 
-q <- ggplot(X, aes(x=year))
-q  + geom_line(aes(y=count, group=term, color=term))
 
-stack.plot('vs_eu.csv')
+total[,-c(1,2)] <- total[,-c(1,2)]/total[,2]*100
+total$total <- NULL
+
+allo <- read.csv('datasets/allo.csv')
+prog <- read.csv('datasets/prog.csv')
+discp <- read.csv('datasets/disciplines.csv')
+ineq <- read.csv('datasets/ineq.csv')
+migranten <- allo$migranten/max(allo$migranten)*100
+minderheden <- allo$minderheden/max(allo$minderheden)*100
+marx <- prog$marx/max(prog$marx)*100
+stratificatie <- ineq$stratificatie/max(ineq$stratificatie)*100
+armoede <-ineq$armoede/max(ineq$armoede)*100
+sociologie <- discp$sociologie/max(discp$sociologie)*100
+total <- discp$total/max(discp$total)*100
+comb <- cbind(migranten, marx, sociologie, total)
+comb <- cbind(minderheden, marx, sociologie, total)
+comb <- cbind(migranten, armoede, sociologie, total)
+comb <- cbind(migranten, stratificatie, sociologie, total) #!
+comb <- cbind(armoede, stratificatie, sociologie, total) #!
+X <- comb
+
+allo[,-1] <- allo[,-1]/total$sociologie*100
+X <- allo
+stack.plot('datasets/vs_eu.csv')
