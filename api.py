@@ -3,6 +3,7 @@
 import sys, os, urllib, logging
 import requests, redis, tablib
 from lxml import etree
+import argparse
 try:
     from collections import Counter
 except ImportError: # Python <2.7
@@ -174,7 +175,7 @@ class UniCat(object):
         if cache: 
             self.cache = redis.Redis(host='localhost', port=6379, db=0)
 
-    def get_dates(self, terms=None, start=1900, stop=2010):
+    def get_dates(self, terms=None, start=1900, stop=2011, language=None):
         if type(terms) != list: terms = [terms]
         data = tablib.Dataset()
 
@@ -189,6 +190,7 @@ class UniCat(object):
                 q.cqlp['year'] = year
                 if term: q.cqlp['term'] = term
                 q.maximumRecords = 1
+                if language: q.cqlp['language'] = language
                 
                 # execute query and insert date-counts
                 r = q.execute(collate=False)
@@ -211,11 +213,14 @@ class UniCat(object):
         return data
 
 def main():
+    # unicat.py --terms|t "sociologie,economie,sociale wetenschappen" --dates|d 1900-2011|1900 -language|l dut|eng|fra? --format|f=csv|json|xls --ouput|o=dates|raw|full
     terms = [term.strip() for term in sys.argv[1].split(',')]
+    try:
+        language = sys.argv[2]
+    except IndexError:
+        language = None
     u = UniCat()
-    print u.get_dates(terms).csv
-
-
+    print u.get_dates(terms, language=language).csv
 
 if __name__ == '__main__':
     main()
